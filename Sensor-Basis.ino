@@ -8,12 +8,17 @@
 #endif
 #include <PubSubClient.h>
 
+#include <SimpleDHT.h>
+
 #include "Zugangsinfo.h"
 
+// Sensor DHT22
+#define DHT22PIN 22
+SimpleDHT22 dht22(DHT22PIN);
 
 
 // MQTT Muster Daten:
-#define DEVICETYP	"sensor"
+#define DEVICETYP	"Sensor"
 #define DEVICEID	"WZTuF"
 #define DEVICEORT1	"EG"
 #define DEVICEORT2	"WZ"
@@ -25,7 +30,7 @@
 #define DEVICEART5	"Other" // Test: test mit variablen Infos
 
 
-#define MQTT_MUSTER_BASIS		DEVICETYP DEVICEID DEVICEORT1 DEVICEORT2 DEVICEORT3
+#define MQTT_MUSTER_BASIS		DEVICETYP "/" DEVICEID "/" DEVICEORT1 "/" DEVICEORT2 "/" DEVICEORT3 "/"
 
 #define MAX_NACHRICHT   40
 #define MAX_THEMA       55 // MQTT Topic (siehe oben)
@@ -39,6 +44,7 @@ char msg[MAX_NACHRICHT];
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR char _nachricht[20]; // Anfang der Nachricht
 RTC_DATA_ATTR char _thema[MAX_THEMA]; // topic
+
 
 //////////////////////////////////////////////
 // Deepsleep Part
@@ -78,9 +84,13 @@ void setup_wifi() {
 
   WiFi.begin(ssid, password);
 
+  int connect_trial_count = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    ++connect_trial_count;
+    if(connect_trial_count > 15)
+      esp_restart();
   }
 
   randomSeed(micros());
@@ -126,17 +136,8 @@ void reconnect() {
 #endif
     Serial.printf("Attempting MQTT connection <%s> ", clientId.c_str());
     // Attempt to connect
-    if (client.connect(clientId.c_str(), DEVICETYP, )) {
+    if (client.connect(clientId.c_str(), device_user, device_pw)) {
       Serial.printf("connected: <%s>\n", clientId.c_str());
-      // resubscribe if needed
-      if (_lausche) {
-        Serial.printf("subscribing to <%s> ", _thema);
-        if (client.subscribe(_thema)) {
-          Serial.println("erfolgreich");
-        } else {
-          Serial.println("nicht erfolgreich");
-        }
-      }
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -146,15 +147,25 @@ void reconnect() {
     }
   }
 }
-void send_MSG(long now) {
-  lastMsg = now;
-  ++value; ++bootCount;
-  snprintf (msg, MAX_NACHRICHT, "%s #%ld-%ld", _nachricht, value, bootCount);
+
+void send_MSG(const char* d_art, float wert) {
+  snprintf (msg, MAX_NACHRICHT, "%f", wert);
+  snprintf (_thema, MAX_THEMA, "%s%s", MQTT_MUSTER_BASIS, d_art);
   Serial.printf("Publish message: <%s>:<%s>", _thema, msg);
   if (client.publish(_thema, msg)) {
-    Serial.printf(" good: <%s>:<%s>\n", _thema, msg);
+    Serial.println(" good");
   } else {
-    Serial.printf(" failed: <%s>:<%s>\n", _thema, msg);
+    Serial.println(" failed");
+  }
+}
+
+void send_MSG_Other(char* inhalt) {
+  snprintf (msg, MAX_NACHRICHT, "%s #%ld", inhalt, bootCount);
+  Serial.printf("Publish message: <%s>:<%s>", MQTT_MUSTER_BASIS DEVICEART5, msg);
+  if (client.publish(_thema, msg)) {
+    Serial.println(" good");
+  } else {
+    Serial.println(" failed");
   }
 }
 
@@ -163,103 +174,30 @@ void send_MSG(long now) {
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
+  // Zur Begrüßung 3 mal flash
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(50);
+    digitalWrite(LED_BUILTIN, HIGH);
+    if (i < 2)
+      delay(50);
+  }
+
   Serial.begin(115200);
   setup_wifi();
+
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 
-  if (bootCount == 0) {
-    strcpy(_thema, "meinKanal");
-#ifdef ESP8266
-    strcpy(_nachricht, "mein ESP8266");
-#endif
-#ifdef ESP32
-    strcpy(_nachricht, "mein ESP32__");
-#endif
-  }
   print_wakeup_reason();
-  print_wakeup_touchpad();
-  
+
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
                  " Seconds");
-                 
-  //Setup interrupt on Touch Pad 3 (GPIO15)
-  touchAttachInterrupt(T3, TouchCallback, Threshold);
-  //Configure Touchpad as wakeup source
-  esp_sleep_enable_touchpad_wakeup();
-
-
 }
 
+int value = 0;
 void loop() {
-
-  if (Serial.available() > 0) {
-    // read the incoming byte:
-    char _c  = Serial.read(); // Kommando
-    String _msg = Serial.readStringUntil('\n');
-    _msg.trim();
-    int _len = _msg.length();
-    if (_len > 15)
-      return;
-    switch (_c) {
-      case 's': // _s_enden
-        strncpy(_nachricht, _msg.c_str(), 20);
-        _sende = 1;
-        Serial.printf("einmal senden: <%s>\n", _nachricht);
-        break;
-      case 'r': // _r_egelmäßig Senden
-        strncpy(_nachricht, _msg.c_str(), 20);
-        _sende = -1;
-        Serial.printf("dauernd senden: <%s>\n", _nachricht);
-        break;
-      case 'a': // senden _a_nhalten
-        _sende = 0;
-        Serial.printf("senden aufhoeren\n");
-        break;
-      case 'l': // _l_auschen (subscribe)
-        _lausche = true;
-        if (client.connected()) {
-          client.loop();
-          client.subscribe(_thema);
-          client.loop();
-        }
-        Serial.printf("subscribe to: <%s>\n", _thema);
-        break;
-      case 'w': // _w_eghören (unsubscribe)
-        _lausche = false;
-        if (client.connected()) {
-          client.loop();
-          client.unsubscribe(_thema);
-          client.loop();
-        }
-        Serial.printf("unsubscribe\n");
-        break;
-      case 't': // _t_opic
-        if (_lausche) {
-          client.loop();
-          client.unsubscribe(_thema);
-          client.loop();
-        }
-        strncpy (_thema, _msg.c_str(), MAX_THEMA);
-        if (_lausche) {
-          client.loop();
-          client.subscribe(_thema);
-          client.loop();
-        }
-        Serial.printf("Neues Thema: <%s>\n", _thema);
-        break;
-      default: // ??? - Anleitung schicken
-        Serial.println("Unbekannter Befehl, mögliche Befehle sind:");
-        Serial.println("sxxxx: einmal senden, Botschaft xxxx");
-        Serial.println("rxxxx: regelmäßig senden, Botschaft xxxx");
-        Serial.println("a: senden aufhören");
-        Serial.println("l: subscribe");
-        Serial.println("w: unsubscribe");
-        Serial.println("txxxx: topic festlegen");
-        break;
-    }
-  }
 
   if (!client.connected()) {
     reconnect();
@@ -267,17 +205,30 @@ void loop() {
   client.loop();
 
   long now = millis();
-  if (_sende == 1) {
-    send_MSG(now);
-    _sende = 0;
+
+  float temperature = 0;
+  float humidity = 0;
+  int err = SimpleDHTErrSuccess;
+  if ((err = dht22.read2(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+    char nachricht[30];
+    snprintf(nachricht, 29, "Read DHT22 failed, err=%d", err);
+    Serial.println(nachricht); delay(2000);
+    send_MSG_Other(nachricht);
+    return;
   }
-  if ((_sende == -1) && (now - lastMsg > 2000)) {
-    send_MSG(now);
-  }
-  if (value > 3) {
-    Serial.println("Going to sleep now");
-    delay(50);
-    esp_deep_sleep_start();
-    Serial.println("This will never be printed");
-  }
+
+  Serial.print("Sample OK: ");
+  Serial.print((float)temperature); Serial.print(" *C, ");
+  send_MSG(DEVICEART1, temperature);
+  Serial.print((float)humidity); Serial.println(" RH%");
+  send_MSG(DEVICEART2, humidity);
+
+  float bat_level = analogRead(35)*3.3f/2048;
+  Serial.print((float)bat_level); Serial.println(" V");
+  send_MSG(DEVICEART4, bat_level);
+
+  Serial.println("Going to sleep now");
+  delay(50);
+  esp_deep_sleep_start();
+  Serial.println("This will never be printed");
 }
