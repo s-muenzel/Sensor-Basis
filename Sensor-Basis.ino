@@ -8,14 +8,41 @@
 #endif
 #include <PubSubClient.h>
 
+#define DEBUGING
+#define DEBUG_SERIAL
+#ifdef DEBUG_SERIAL
+#define D_BEGIN(speed)   Serial.begin(speed)
+#define D_PRINT(...)     Serial.print(__VA_ARGS__)
+#define D_PRINTLN(...)   Serial.println(__VA_ARGS__)
+#define D_PRINTF(...)    Serial.printf(__VA_ARGS__)
+#else
+#define D_BEGIN(speed)
+#define D_PRINT(...)
+#define D_PRINTLN(...)
+#define D_PRINTF(...)
+#endif
+
 #include <SimpleDHT.h>
 
 #include "Zugangsinfo.h"
+
+// Allgemeine Parameter
+#ifdef DEBUGING
+#define ZEIT_ZW_MESSUNGEN        5ll     /* wielange zwischen Sensor-Messungen(in Sekunden) */
+#define ZEIT_ZW_NETZWERKFEHLER     5ll     /* bei WLAN oder MQTT Verbindungsproblemen (in Sekunden) */
+#define ZEIT_ZW_NIEDRIGER_AKKU  10ll     /* wenn der Akku leer ist (in Sekunden) */
+#else
+#define ZEIT_ZW_MESSUNGEN        300ll     /* wielange zwischen Sensor-Messungen(in Sekunden) */
+#define ZEIT_ZW_NETZWERKFEHLER     5ll     /* bei WLAN oder MQTT Verbindungsproblemen (in Sekunden) */
+#define ZEIT_ZW_NIEDRIGER_AKKU  3600ll     /* wenn der Akku leer ist (in Sekunden) */
+#endif
 
 // Sensor DHT22
 #define DHT22PIN 22
 SimpleDHT22 dht22(DHT22PIN);
 
+// Sensor Photowiderstand
+#define RPHOTOPIN 34
 
 // MQTT Muster Daten:
 #define DEVICETYP	"Sensor"
@@ -27,8 +54,6 @@ SimpleDHT22 dht22(DHT22PIN);
 #define DEVICEART2	"F" // 2. Sensorwert: Rel. Feuchte
 #define DEVICEART3	"H" // 3. Sensorwert: Helligkeit
 #define DEVICEART4	"B" // 4. Sensorwert: Batteriestatus
-#define DEVICEART5	"Other" // Test: test mit variablen Infos
-
 
 #define MQTT_MUSTER_BASIS		DEVICETYP "/" DEVICEID "/" DEVICEORT1 "/" DEVICEORT2 "/" DEVICEORT3 "/"
 
@@ -40,36 +65,19 @@ PubSubClient client(espClient);
 
 long lastMsg = 0;
 char msg[MAX_NACHRICHT];
+char _thema[MAX_THEMA]; // topic
+
+#define BOOT_NORMAL 0
+#define BOOT_AKKU   1
+#define BOOT_WLAN   2
+#define BOOT_MQTT   3
 
 RTC_DATA_ATTR int bootCount = 0;
-RTC_DATA_ATTR char _nachricht[20]; // Anfang der Nachricht
-RTC_DATA_ATTR char _thema[MAX_THEMA]; // topic
-
+RTC_DATA_ATTR int bootNachricht = BOOT_NORMAL;
 
 //////////////////////////////////////////////
-// Deepsleep Part
-/*
-  Method to print the reason by which ESP32
-  has been awaken from sleep
-*/
-#define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  5        /* Time ESP32 will go to sleep (in seconds) */
-
-void print_wakeup_reason() {
-  esp_sleep_wakeup_cause_t wakeup_reason;
-
-  wakeup_reason = esp_sleep_get_wakeup_cause();
-
-  switch (wakeup_reason)
-  {
-    case 1  : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
-    case 2  : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    case 3  : Serial.println("Wakeup caused by timer"); break;
-    case 4  : Serial.println("Wakeup caused by touchpad"); break;
-    case 5  : Serial.println("Wakeup caused by ULP program"); break;
-    default : Serial.println("Wakeup was not caused by deep sleep"); break;
-  }
-}
+// Deepsleep
+#define uS_TO_S_FACTOR 1000000ll  /* Conversion factor for micro seconds to seconds */
 
 /////////////////////////////////////////////////
 // Normaler WiFi Part
@@ -78,52 +86,46 @@ void setup_wifi() {
 
   delay(10);
   // We start by connecting to a WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
+  D_PRINTLN();
+  D_PRINT("Connecting to ");
+  D_PRINTLN(ssid);
 
   WiFi.begin(ssid, password);
 
   int connect_trial_count = 0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    delay(1000);
+    D_PRINT(".");
     ++connect_trial_count;
-    if(connect_trial_count > 15)
-      esp_restart();
+    if (connect_trial_count > 10) {
+      D_PRINTLN("Fehler: kein WLAN, schlafe und versuche es spaeter wieder\n");
+      bootNachricht = BOOT_WLAN;
+      esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
+      delay(50);
+      esp_deep_sleep_start();
+    }
   }
 
-  randomSeed(micros());
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  D_PRINTLN("");
+  D_PRINTLN("WiFi connected");
+  D_PRINTLN("IP address: ");
+  D_PRINTLN(WiFi.localIP());
 }
 
 ///////////////////////////////////////////////////
 // MQTT Part
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.printf("Message arrived [%s] ", topic);
+  D_PRINTF("Message arrived [%s] ", topic);
   for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+    D_PRINT((char)payload[i]);
   }
-  Serial.println();
-
-  // Switch on the LED if an 1 was received as first character
-  if ((char)payload[0] == '1') {
-    digitalWrite(LED_BUILTIN, LOW);   // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-  } else {
-    digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off by making the voltage HIGH
-  }
-
+  D_PRINTLN();
 }
 
 void reconnect() {
   // Loop until we're reconnected
+  int connect_trial_count = 0;
   while (!client.connected()) {
 #ifdef ESP8266
     String clientId = "E8266-";
@@ -134,38 +136,58 @@ void reconnect() {
     clientId += String((long unsigned int)(0xffff & ESP.getEfuseMac()), HEX);
     clientId += String((long unsigned int)(0xffff & (ESP.getEfuseMac() >> 32)), HEX);
 #endif
-    Serial.printf("Attempting MQTT connection <%s> ", clientId.c_str());
+    D_PRINTF("Verbinde mit MQTT Broker <%s> ", clientId.c_str());
     // Attempt to connect
-    if (client.connect(clientId.c_str(), device_user, device_pw)) {
-      Serial.printf("connected: <%s>\n", clientId.c_str());
+    if (client.connect(clientId.c_str(), device_user, device_pw, MQTT_MUSTER_BASIS, 0, true, "tot", true)) {
+      D_PRINTF("connected: <%s>\n", clientId.c_str());
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      D_PRINT("failed, rc=");
+      D_PRINT(client.state());
+      D_PRINTLN(" try again in 5 seconds");
       // Wait 5 seconds before retrying
-      delay(5000);
+      delay(1000);
+      ++connect_trial_count;
+      if (connect_trial_count > 10) {
+        D_PRINTLN("Fehler: kein MQTT, schlafe und versuche es spaeter wieder\n");
+        bootNachricht = BOOT_MQTT;
+        esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
+        delay(50);
+        esp_deep_sleep_start();
+      }
     }
   }
 }
 
+void send_MSG(const char* d_art, int wert) {
+  char _msg[MAX_NACHRICHT];
+  snprintf (_msg, MAX_NACHRICHT, "%d", wert);
+  send_MSG(d_art, _msg);
+}
+
 void send_MSG(const char* d_art, float wert) {
-  snprintf (msg, MAX_NACHRICHT, "%f", wert);
+  char _msg[MAX_NACHRICHT];
+  snprintf (_msg, MAX_NACHRICHT, "%f", wert);
+  send_MSG(d_art, _msg);
+}
+
+void send_MSG(const char* d_art, const char* wert) {
+  strncpy(msg, wert, MAX_NACHRICHT);
   snprintf (_thema, MAX_THEMA, "%s%s", MQTT_MUSTER_BASIS, d_art);
-  Serial.printf("Publish message: <%s>:<%s>", _thema, msg);
-  if (client.publish(_thema, msg)) {
-    Serial.println(" good");
+  D_PRINTF("Publish message: <%s>:<%s>", _thema, msg);
+  if (client.publish(_thema, msg, true)) {
+    D_PRINTLN(" good");
   } else {
-    Serial.println(" failed");
+    D_PRINTLN(" failed");
   }
 }
 
-void send_MSG_Other(char* inhalt) {
-  snprintf (msg, MAX_NACHRICHT, "%s #%ld", inhalt, bootCount);
-  Serial.printf("Publish message: <%s>:<%s>", MQTT_MUSTER_BASIS DEVICEART5, msg);
-  if (client.publish(_thema, msg)) {
-    Serial.println(" good");
+void send_MSG_Other(const char* inhalt, bool retain) {
+  snprintf (msg, MAX_NACHRICHT, "%s", inhalt);
+  D_PRINTF("Publish message: <%s>:<%s>", MQTT_MUSTER_BASIS, msg);
+  if (client.publish(MQTT_MUSTER_BASIS, msg, retain)) {
+    D_PRINTLN(" good");
   } else {
-    Serial.println(" failed");
+    D_PRINTLN(" failed");
   }
 }
 
@@ -174,6 +196,7 @@ void send_MSG_Other(char* inhalt) {
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
+#ifdef DEBUGING
   // Zur Begrüßung 3 mal flash
   for (int i = 0; i < 3; i++) {
     digitalWrite(LED_BUILTIN, LOW);
@@ -182,21 +205,44 @@ void setup() {
     if (i < 2)
       delay(50);
   }
+#endif
 
-  Serial.begin(115200);
+  D_BEGIN(115200);
   setup_wifi();
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 
-  print_wakeup_reason();
+  D_PRINTF("Setup ESP32 Deepsleep fuer %lld Sekunden\n", ZEIT_ZW_MESSUNGEN);
+  esp_sleep_enable_timer_wakeup(ZEIT_ZW_MESSUNGEN * uS_TO_S_FACTOR);
 
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
-                 " Seconds");
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  switch(bootNachricht) {
+    default:
+    case BOOT_NORMAL:
+      sprintf(msg, "lebt normal(%d)", bootCount);
+      break;
+    case BOOT_AKKU:
+      sprintf(msg, "lebt AKKU(%d)", bootCount);
+      break;
+    case BOOT_WLAN:
+      sprintf(msg, "lebt WLAN(%d)", bootCount);
+      break;
+    case BOOT_MQTT:
+      sprintf(msg, "lebt MQTT (%d)", bootCount);
+      break;
+  }
+  send_MSG_Other(msg, true);
+  delay(50);
+  client.loop();
+  bootNachricht = BOOT_NORMAL;
+  bootCount++;
 }
 
-int value = 0;
 void loop() {
 
   if (!client.connected()) {
@@ -204,31 +250,51 @@ void loop() {
   }
   client.loop();
 
-  long now = millis();
-
-  float temperature = 0;
-  float humidity = 0;
+  //  DHT22
+  float T = 0;
+  float F = 0;
   int err = SimpleDHTErrSuccess;
-  if ((err = dht22.read2(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+  if ((err = dht22.read2(&T, &F, NULL)) != SimpleDHTErrSuccess) {
     char nachricht[30];
-    snprintf(nachricht, 29, "Read DHT22 failed, err=%d", err);
-    Serial.println(nachricht); delay(2000);
-    send_MSG_Other(nachricht);
+    snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
+    D_PRINTLN(nachricht); delay(2000);
+    send_MSG_Other(nachricht, false);
     return;
   }
+  D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
+  send_MSG(DEVICEART1, T);
+  delay(5);
+  client.loop();
+  send_MSG(DEVICEART2, F);
+  delay(5);
+  client.loop();
 
-  Serial.print("Sample OK: ");
-  Serial.print((float)temperature); Serial.print(" *C, ");
-  send_MSG(DEVICEART1, temperature);
-  Serial.print((float)humidity); Serial.println(" RH%");
-  send_MSG(DEVICEART2, humidity);
+  // Photo-Wert
+  int h = analogRead(RPHOTOPIN);
+  D_PRINTF("Helligkeit: %d\n", h);
+  send_MSG(DEVICEART3, h);
+  delay(5);
+  client.loop();
 
-  float bat_level = analogRead(35)*3.3f/2048;
-  Serial.print((float)bat_level); Serial.println(" V");
+  // Level Akku
+  float bat_level = analogRead(35) * 7.445f / 4096;
+  D_PRINT((float)bat_level); D_PRINTLN(" V");
   send_MSG(DEVICEART4, bat_level);
+  delay(5);
+  client.loop();
+  if (bat_level < 3.7) { // Akku leer, schlafen
+    send_MSG_Other("Akku leer - schlafe", true);
+    delay(5);
+    client.loop();
+    bootNachricht = BOOT_AKKU;
+    esp_sleep_enable_timer_wakeup(ZEIT_ZW_NIEDRIGER_AKKU * uS_TO_S_FACTOR);
+    delay(20);
+    esp_deep_sleep_start();
+  }
 
-  Serial.println("Going to sleep now");
+  D_PRINTLN("Going to sleep now");
   delay(50);
   esp_deep_sleep_start();
-  Serial.println("This will never be printed");
+  D_PRINTLN("This will never be printed");
 }
+
