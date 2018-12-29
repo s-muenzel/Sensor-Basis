@@ -6,7 +6,7 @@
 #include "MQTT.h"
 
 #define DEBUGING
-#define DEBUG_SERIAL
+//#define DEBUG_SERIAL
 #ifdef DEBUG_SERIAL
 #define D_BEGIN(speed)   Serial.begin(speed)
 #define D_PRINT(...)     Serial.print(__VA_ARGS__)
@@ -50,10 +50,10 @@ Mein_MQTT	__Mqtt;
 
 // meine eigenen Boot-Codes (welcher Zustand vor dem letzten Deepsleep
 enum boot_codes {
-	BOOT_NORMAL,
-	BOOT_AKKU,
-	BOOT_WLAN,
-	BOOT_MQTT
+  BOOT_NORMAL,
+  BOOT_AKKU,
+  BOOT_WLAN,
+  BOOT_MQTT
 };
 
 RTC_DATA_ATTR int bootCount = 0;
@@ -64,36 +64,35 @@ RTC_DATA_ATTR enum boot_codes bootNachricht = BOOT_NORMAL;
 #define uS_TO_S_FACTOR 1000000ll  /* Conversion factor for micro seconds to seconds */
 
 void Schlafe(enum boot_codes Grund) {
-	bootNachricht = Grund;
-	switch(Grund) {
-		case BOOT_NORMAL:
-		default:
-			D_PRINTLN("Schlafe bis zur nächsten Messung");
-			esp_sleep_enable_timer_wakeup(ZEIT_ZW_MESSUNGEN * uS_TO_S_FACTOR);
-		break;
-		case BOOT_AKKU:
-			D_PRINTLN("Akku alle, schlafe lange");
-			esp_sleep_enable_timer_wakeup(ZEIT_ZW_NIEDRIGER_AKKU * uS_TO_S_FACTOR);
-		break;
-		case BOOT_WLAN:
-			D_PRINTLN("Kein WLAN, noch'n Versuch");
-			esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
-		break;
-		case BOOT_MQTT:
-			D_PRINTLN("Kein MQTT, noch'n Versuch");
-			esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
-		break;
-	}
-	delay(50);
-	esp_deep_sleep_start();
+  bootNachricht = Grund;
+  switch (Grund) {
+    case BOOT_NORMAL:
+    default:
+      D_PRINTLN("Schlafe bis zur nächsten Messung");
+      esp_sleep_enable_timer_wakeup(ZEIT_ZW_MESSUNGEN * uS_TO_S_FACTOR);
+      break;
+    case BOOT_AKKU:
+      D_PRINTLN("Akku alle, schlafe lange");
+      esp_sleep_enable_timer_wakeup(ZEIT_ZW_NIEDRIGER_AKKU * uS_TO_S_FACTOR);
+      break;
+    case BOOT_WLAN:
+      D_PRINTLN("Kein WLAN, noch'n Versuch");
+      esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
+      break;
+    case BOOT_MQTT:
+      D_PRINTLN("Kein MQTT, noch'n Versuch");
+      esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
+      break;
+  }
+  delay(50);
+  esp_deep_sleep_start();
 }
 
 /////////////////////////////////////////////////
 // Normaler WiFi Part
 
 bool setup_wifi() {
-  D_PRINTF("Verbinde mit <%s> ",ssid);
-
+  D_PRINTF("Verbinde mit <%s> ", ssid);
   WiFi.begin(ssid, password);
 
   int connect_trial_count = 0;
@@ -103,21 +102,22 @@ bool setup_wifi() {
     ++connect_trial_count;
     if (connect_trial_count > 10) {
       D_PRINTLN("Fehler: keine WLAN-Verbindung");
-	  return false;
+      return false;
     }
   }
   D_PRINT("ok, IP: ");
   D_PRINTLN(WiFi.localIP());
+  return true;
 }
 
 //////////////////////////////////////////////////////
 // Hauptprogramm
 
 void setup() {
-	// Level Akku - als erstes lesen. Falls zu niedrig, sofort wieder einschlafen
+  // Level Akku - als erstes lesen. Falls zu niedrig, sofort wieder einschlafen
   float bat_level = analogRead(35) * 7.445f / 4096;
   if (bat_level < AKKU_LEER) { // Akku leer, schlafen
-	Schlafe(BOOT_AKKU);
+    Schlafe(BOOT_AKKU);
   }
 
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
@@ -135,14 +135,14 @@ void setup() {
 
   D_BEGIN(115200);
   delay(10);
-  
-  if(!setup_wifi()) {
-	Schlafe(BOOT_WLAN); // Schluss hier
+
+  if (!setup_wifi()) {
+    Schlafe(BOOT_WLAN); // Schluss hier
   }
 
   __Mqtt.Beginn();
-  if(!__Mqtt.Verbinde()) {
-	Schlafe(bootNachricht); // Schluss hier
+  if (!__Mqtt.Verbinde()) {
+    Schlafe(bootNachricht); // Schluss hier
   }
 
   char msg[30];
@@ -175,11 +175,11 @@ void setup() {
     D_PRINTLN(nachricht);
     __Mqtt.Sende("", nachricht, false);
   } else {
-	  D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
-	  __Mqtt.Sende(DEVICEART1, T);
-	  __Mqtt.Sende(DEVICEART2, F);
+    D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
+    __Mqtt.Sende(DEVICEART1, T);
+    __Mqtt.Sende(DEVICEART2, F);
   }
-  
+
   // Photo-Wert
   int h = analogRead(RPHOTOPIN);
   D_PRINTF("Helligkeit: %d\n", h);
@@ -191,7 +191,7 @@ void setup() {
   if (bat_level < AKKU_NIEDRIG) { // Akku leer, schlafen
     __Mqtt.Sende("", "Akku leer - schlafe", true);
     D_PRINTF("Akku leer, gehe jetzt schlafen %lld Sekunden schlafen\n", ZEIT_ZW_NIEDRIGER_AKKU);
-	Schlafe(BOOT_AKKU);
+    Schlafe(BOOT_AKKU);
   }
 
   D_PRINTF("gehe jetzt schlafen %lld Sekunden schlafen\n", ZEIT_ZW_MESSUNGEN);

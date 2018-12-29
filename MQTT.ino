@@ -50,7 +50,8 @@ bool Mein_MQTT::Sende(const char* d_art, const char* wert, bool retain) {
   strncpy(_msg, wert, MAX_NACHRICHT);
   snprintf (_thema, MAX_THEMA, "%s%s", MQTT_MUSTER_BASIS, d_art);
   D_PRINTF("Publish message: <%s>:<%s>", _thema, _msg);
-  if (client.publish(_thema, _msg, retain)) {
+  
+  if (Verbinde() && client.publish(_thema, _msg, retain)) {
     D_PRINTLN(" good");
   } else {
     D_PRINTLN(" failed");
