@@ -45,7 +45,7 @@ SimpleDHT22 __Dht22(DHT22PIN);
 #define AKKU_NIEDRIG 3.7 			// Ab hier noch normales Operieren aber lange schlafen	
 #define AKKU_LEER	 3.65			// Ab hier nix mehr tun ausser sofort wieder schlafen
 
-WiFiClient	__WifiClient;
+WiFiClient	__Wifi_Client;
 Mein_MQTT	__Mqtt;
 
 // meine eigenen Boot-Codes (welcher Zustand vor dem letzten Deepsleep
@@ -84,6 +84,7 @@ void Schlafe(enum boot_codes Grund) {
       esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
       break;
   }
+  __Mqtt.Ende();
   delay(50);
   esp_deep_sleep_start();
 }
@@ -145,6 +146,7 @@ void setup() {
     Schlafe(bootNachricht); // Schluss hier
   }
 
+  bootCount++;
   char msg[30];
   switch (bootNachricht) {
     default:
@@ -163,21 +165,26 @@ void setup() {
   }
   __Mqtt.Sende("", msg, true);
   bootNachricht = BOOT_NORMAL;
-  bootCount++;
 
   //  DHT22
   float T = 0;
   float F = 0;
   int err = SimpleDHTErrSuccess;
-  if ((err = __Dht22.read2(&T, &F, NULL)) != SimpleDHTErrSuccess) {
-    char nachricht[50];
-    snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
-    D_PRINTLN(nachricht);
-    __Mqtt.Sende("", nachricht, false);
-  } else {
-    D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
-    __Mqtt.Sende(DEVICEART1, T);
-    __Mqtt.Sende(DEVICEART2, F);
+  int lese_versuche = 3;
+  while (lese_versuche > 0) {
+    if ((err = __Dht22.read2(&T, &F, NULL)) == SimpleDHTErrSuccess) {
+      D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
+      __Mqtt.Sende(DEVICEART1, T);
+      __Mqtt.Sende(DEVICEART2, F);
+      break;
+    }
+    delay(500);
+  }
+  if(lese_versuche==0) {
+      char nachricht[50];
+      snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
+      D_PRINTLN(nachricht);
+      __Mqtt.Sende("", nachricht, false);
   }
 
   // Photo-Wert

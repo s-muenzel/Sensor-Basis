@@ -22,20 +22,22 @@
 #define MAX_THEMA       55 // MQTT Topic (siehe oben)
 
 class Mein_MQTT {
-public:
-	Mein_MQTT();
-	void Beginn();
-	bool Verbinde();
-	
-	bool Sende(const char* d_art, int wert);
-	bool Sende(const char* d_art, float wert);
-	bool Sende(const char* d_art, const char* wert, bool retain = false);
+  public:
+    Mein_MQTT();
+    void Beginn();
+    bool Verbinde();
 
-private:
-	PubSubClient client;
-	char _msg[MAX_NACHRICHT];
-	char _thema[MAX_THEMA]; // topic
-	char client_ID[40];
+    bool Sende(const char* d_art, int wert);
+    bool Sende(const char* d_art, float wert);
+    bool Sende(const char* d_art, const char* wert, bool retain = false);
+
+    void Ende();
+
+  private:
+    PubSubClient client;
+    char _msg[MAX_NACHRICHT];
+    char _thema[MAX_THEMA]; // topic
+    char _client_ID[40];
 };
 
 #endif // INCLUDE_MQTT
