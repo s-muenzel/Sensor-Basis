@@ -38,13 +38,13 @@ bool Mein_MQTT::Verbinde() {
 
 bool Mein_MQTT::Sende(const char* d_art, int wert) {
   char msg[MAX_NACHRICHT];
-  snprintf (msg, MAX_NACHRICHT, "%d,%d", bootCount, wert);
+  snprintf (msg, MAX_NACHRICHT, "%d", wert);
   return Sende(d_art, msg, false);
 }
 
 bool Mein_MQTT::Sende(const char* d_art, float wert) {
   char msg[MAX_NACHRICHT];
-  snprintf (msg, MAX_NACHRICHT, "%d,%f", bootCount, wert);
+  snprintf (msg, MAX_NACHRICHT, "%f", wert);
   return Sende(d_art, msg, false);
 }
 

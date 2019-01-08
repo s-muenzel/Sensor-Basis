@@ -5,7 +5,7 @@
 
 #include "MQTT.h"
 
-#define DEBUGING
+//#define DEBUGING
 //#define DEBUG_SERIAL
 #ifdef DEBUG_SERIAL
 #define D_BEGIN(speed)   Serial.begin(speed)
@@ -40,6 +40,10 @@ SimpleDHT22 __Dht22(DHT22PIN);
 
 // Sensor Photowiderstand
 #define RPHOTOPIN 34
+
+// Sensor Feuchtesensor
+#define FEUCHTESENSORPIN 32
+#define FEUCHTESENSORVDDPIN 27
 
 // Akku Level
 #define AKKU_NIEDRIG 3.7 			// Ab hier noch normales Operieren aber lange schlafen	
@@ -121,9 +125,11 @@ void setup() {
     Schlafe(BOOT_AKKU);
   }
 
+  pinMode(FEUCHTESENSORVDDPIN, OUTPUT); // Als erstes die Stromversorgung des Feuchtesensors anschalten
+  digitalWrite(FEUCHTESENSORVDDPIN, HIGH);
+#ifdef DEBUG_SERIAL
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
   digitalWrite(LED_BUILTIN, HIGH);
-#ifdef DEBUG_SERIAL
   // Zur Begrüßung 3 mal flash
   for (int i = 0; i < 3; i++) {
     digitalWrite(LED_BUILTIN, LOW);
@@ -180,11 +186,11 @@ void setup() {
     }
     delay(500);
   }
-  if(lese_versuche==0) {
-      char nachricht[50];
-      snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
-      D_PRINTLN(nachricht);
-      __Mqtt.Sende("", nachricht, false);
+  if (lese_versuche == 0) {
+    char nachricht[50];
+    snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
+    D_PRINTLN(nachricht);
+    __Mqtt.Sende("", nachricht, false);
   }
 
   // Photo-Wert
@@ -192,15 +198,23 @@ void setup() {
   D_PRINTF("Helligkeit: %d\n", h);
   __Mqtt.Sende(DEVICEART3, h);
 
+
+  // Feuchtesensor
+  int fs = analogRead(FEUCHTESENSORPIN);
+  D_PRINTF("Wert Feuchesensor: %d\n", fs);
+  __Mqtt.Sende(DEVICEART4, fs);
+  digitalWrite(FEUCHTESENSORVDDPIN, LOW);
+  
   // Level Akku
   D_PRINTF("Akkuspannung: %f V\n", (float)bat_level);
-  __Mqtt.Sende(DEVICEART4, bat_level);
+  __Mqtt.Sende(DEVICEART5, bat_level);
   if (bat_level < AKKU_NIEDRIG) { // Akku leer, schlafen
     __Mqtt.Sende("", "Akku leer - schlafe", true);
     D_PRINTF("Akku leer, gehe jetzt schlafen %lld Sekunden schlafen\n", ZEIT_ZW_NIEDRIGER_AKKU);
     Schlafe(BOOT_AKKU);
   }
 
+  delay(50); yield();
   D_PRINTF("gehe jetzt schlafen %lld Sekunden schlafen\n", ZEIT_ZW_MESSUNGEN);
   Schlafe(BOOT_NORMAL);
 }

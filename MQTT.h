@@ -11,10 +11,11 @@
 #define DEVICEORT1	"EG"
 #define DEVICEORT2	"WZ"
 #define DEVICEORT3	""
-#define DEVICEART1	"T" // 1. Sensorwert: Temperatur
-#define DEVICEART2	"F" // 2. Sensorwert: Rel. Feuchte
-#define DEVICEART3	"H" // 3. Sensorwert: Helligkeit
-#define DEVICEART4	"B" // 4. Sensorwert: Batteriestatus
+#define DEVICEART1	"T"  // 1. Sensorwert: Temperatur
+#define DEVICEART2	"F"  // 2. Sensorwert: Rel. Feuchte
+#define DEVICEART3	"H"  // 3. Sensorwert: Helligkeit
+#define DEVICEART4	"f"  // 4. Sensorwert: Bodenfeuchte
+#define DEVICEART5  "B"  // 5. Sensorwert: Batteriestatus
 
 #define MQTT_MUSTER_BASIS		DEVICETYP "/" DEVICEID "/" DEVICEORT1 "/" DEVICEORT2 "/" DEVICEORT3 "/"
 
