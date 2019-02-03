@@ -127,6 +127,7 @@ void setup() {
 
   pinMode(FEUCHTESENSORVDDPIN, OUTPUT); // Als erstes die Stromversorgung des Feuchtesensors anschalten
   digitalWrite(FEUCHTESENSORVDDPIN, HIGH);
+  ulong StartZeit = millis(); // ab jetzt ist VDD da
 #ifdef DEBUG_SERIAL
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
   digitalWrite(LED_BUILTIN, HIGH);
@@ -172,12 +173,24 @@ void setup() {
   __Mqtt.Sende("", msg, true);
   bootNachricht = BOOT_NORMAL;
 
+  // Photo-Wert
+  int h = analogRead(RPHOTOPIN);
+  D_PRINTF("Helligkeit: %d\n", h);
+  __Mqtt.Sende(DEVICEART3, h);
+
   //  DHT22
+  // Gebe dem Sensor mindestens 1s Zeit nach Anliegen der Versorgungsspannung
+  ulong LaufZeit = millis() - StartZeit;
+  if (LaufZeit < 3000) {
+    D_PRINTF("Warte %lu ms\n", 3000 - LaufZeit);
+    delay(3000 - LaufZeit);
+  }
   float T = 0;
   float F = 0;
   int err = SimpleDHTErrSuccess;
   int lese_versuche = 3;
-  while (lese_versuche > 0) {
+  while (lese_versuche-- > 0) {
+    D_PRINTF("DHT Versuch %d\n", lese_versuche);
     if ((err = __Dht22.read2(&T, &F, NULL)) == SimpleDHTErrSuccess) {
       D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
       __Mqtt.Sende(DEVICEART1, T);
@@ -193,18 +206,12 @@ void setup() {
     __Mqtt.Sende("", nachricht, false);
   }
 
-  // Photo-Wert
-  int h = analogRead(RPHOTOPIN);
-  D_PRINTF("Helligkeit: %d\n", h);
-  __Mqtt.Sende(DEVICEART3, h);
+  //  // Feuchtesensor
+  //  int fs = analogRead(FEUCHTESENSORPIN);
+  //  D_PRINTF("Wert Feuchesensor: %d\n", fs);
+  //  __Mqtt.Sende(DEVICEART4, fs);
+  //  digitalWrite(FEUCHTESENSORVDDPIN, LOW);
 
-
-  // Feuchtesensor
-  int fs = analogRead(FEUCHTESENSORPIN);
-  D_PRINTF("Wert Feuchesensor: %d\n", fs);
-  __Mqtt.Sende(DEVICEART4, fs);
-  digitalWrite(FEUCHTESENSORVDDPIN, LOW);
-  
   // Level Akku
   D_PRINTF("Akkuspannung: %f V\n", (float)bat_level);
   __Mqtt.Sende(DEVICEART5, bat_level);
