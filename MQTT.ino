@@ -42,9 +42,9 @@ bool Mein_MQTT::Sende(const char* d_art, int wert) {
   return Sende(d_art, msg, false);
 }
 
-bool Mein_MQTT::Sende(const char* d_art, float wert) {
+bool Mein_MQTT::Sende(const char* d_art, float wert, uint8_t nachkomma) {
   char msg[MAX_NACHRICHT];
-  snprintf (msg, MAX_NACHRICHT, "%f", wert);
+  snprintf (msg, MAX_NACHRICHT, "%.*f", nachkomma, wert);
   return Sende(d_art, msg, false);
 }
 

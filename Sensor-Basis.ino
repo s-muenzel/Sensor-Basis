@@ -57,11 +57,12 @@ enum boot_codes {
   BOOT_NORMAL,
   BOOT_AKKU,
   BOOT_WLAN,
-  BOOT_MQTT
+  BOOT_MQTT,
+  BOOT_RESET
 };
 
 RTC_DATA_ATTR int bootCount = 0;
-RTC_DATA_ATTR enum boot_codes bootNachricht = BOOT_NORMAL;
+RTC_DATA_ATTR enum boot_codes bootNachricht = BOOT_RESET;
 
 //////////////////////////////////////////////
 // Deepsleep
@@ -69,6 +70,7 @@ RTC_DATA_ATTR enum boot_codes bootNachricht = BOOT_NORMAL;
 
 void Schlafe(enum boot_codes Grund) {
   bootNachricht = Grund;
+  __Mqtt.Ende();
   switch (Grund) {
     case BOOT_NORMAL:
     default:
@@ -87,8 +89,10 @@ void Schlafe(enum boot_codes Grund) {
       D_PRINTLN("Kein MQTT, noch'n Versuch");
       esp_sleep_enable_timer_wakeup(ZEIT_ZW_NETZWERKFEHLER * uS_TO_S_FACTOR);
       break;
+    case BOOT_RESET:
+      D_PRINTLN("Max Sleep Count, jetzt echter Reset");
+      break;
   }
-  __Mqtt.Ende();
   delay(50);
   esp_deep_sleep_start();
 }
@@ -119,6 +123,17 @@ bool setup_wifi() {
 // Hauptprogramm
 
 void setup() {
+  // Bin nicht sicher, ob der Blackout bei meinem Sensor mit dem zig-tausendfachen Sleep zu tun hat,
+  // gehe aber lieber auf Nummer Sicher und nach zehntausend Sleeps wird ein echter Reset gemacht
+  // (tut ja nicht wirklich weh)
+  if(bootCount>10000) {
+    // Das Initialisieren sollte vollkommen unnoetig sein, aber was solls
+    bootCount = 0;
+    bootNachricht = BOOT_RESET;
+    ESP.restart();
+  }
+
+  
   // Level Akku - als erstes lesen. Falls zu niedrig, sofort wieder einschlafen
   float bat_level = analogRead(35) * 7.445f / 4096;
   if (bat_level < AKKU_LEER) { // Akku leer, schlafen
@@ -150,7 +165,7 @@ void setup() {
 
   __Mqtt.Beginn();
   if (!__Mqtt.Verbinde()) {
-    Schlafe(bootNachricht); // Schluss hier
+    Schlafe(BOOT_MQTT); // Schluss hier
   }
 
   bootCount++;
@@ -193,8 +208,8 @@ void setup() {
     D_PRINTF("DHT Versuch %d\n", lese_versuche);
     if ((err = __Dht22.read2(&T, &F, NULL)) == SimpleDHTErrSuccess) {
       D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
-      __Mqtt.Sende(DEVICEART1, T);
-      __Mqtt.Sende(DEVICEART2, F);
+      __Mqtt.Sende(DEVICEART1, T, 1);
+      __Mqtt.Sende(DEVICEART2, F, 1);
       break;
     }
     delay(500);
@@ -214,7 +229,7 @@ void setup() {
 
   // Level Akku
   D_PRINTF("Akkuspannung: %f V\n", (float)bat_level);
-  __Mqtt.Sende(DEVICEART5, bat_level);
+  __Mqtt.Sende(DEVICEART5, bat_level, 4);
   if (bat_level < AKKU_NIEDRIG) { // Akku leer, schlafen
     __Mqtt.Sende("", "Akku leer - schlafe", true);
     D_PRINTF("Akku leer, gehe jetzt schlafen %lld Sekunden schlafen\n", ZEIT_ZW_NIEDRIGER_AKKU);
