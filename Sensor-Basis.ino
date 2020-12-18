@@ -44,6 +44,7 @@
 // Sensor DHT22
 #define DHT22PIN 22
 SimpleDHT22 __Dht22(DHT22PIN);
+#define DHT22_PWR_PIN 27
 
 // Sensor Photowiderstand
 #define RPHOTOPIN 34
@@ -112,15 +113,20 @@ bool setup_wifi() {
     delay(1000);
     D_PRINT(".");
     ++connect_trial_count;
-#ifdef DEBUGING
-    if (connect_trial_count > 40) {
-#else // DEBUGING
-    if (connect_trial_count > 10) {
-#endif // DEBUGING
+    if (connect_trial_count == 8) {
+      D_PRINTLN("Keine WLAN-Verbindung, Resette WiFi");
+      WiFi.disconnect(true);
+      delay(1);
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(ssid, password);
+      delay(1);
+    }
+    if (connect_trial_count > 15) {
       D_PRINTLN("Fehler: keine WLAN-Verbindung");
       return false;
     }
   }
+  D_PRINTLN("ok");
   D_PRINT("ok, IP: ");
   D_PRINTLN(WiFi.localIP());
   return true;
@@ -131,6 +137,7 @@ bool setup_wifi() {
 
 void setup() {
   D_BEGIN(115200);
+  delay(1);
   // Level Akku - als erstes lesen. Falls zu niedrig, sofort wieder einschlafen
   float bat_level = analogRead(35) * 7.445f / 4096;
   D_PRINTF("Batteriespannung: %f\n",bat_level);
@@ -155,9 +162,6 @@ void setup() {
       delay(50);
   }
 #endif
-
-  D_BEGIN(115200);
-  delay(10);
 
   if (!setup_wifi()) {
     Schlafe(BOOT_WLAN); // Schluss hier
@@ -189,27 +193,12 @@ void setup() {
   bootNachricht = BOOT_NORMAL;
 
   //  DHT22
-  float T = 0;
-  float F = 0;
-  int err = SimpleDHTErrSuccess;
-  int lese_versuche = 3;
-  while (lese_versuche > 0) {
-    if ((err = __Dht22.read2(&T, &F, NULL)) == SimpleDHTErrSuccess) {
-      D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
-      __Mqtt.Sende(DEVICEART1, T);
-      __Mqtt.Sende(DEVICEART2, F);
-      break;
-    }
-    lese_versuche--;
-    delay(500);
-  }
-  if (lese_versuche == 0) {
-    char nachricht[50];
-    snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
-    D_PRINTLN(nachricht);
-    __Mqtt.Sende("", nachricht, false);
-  }
-
+  pinMode(DHT22_PWR_PIN, OUTPUT); // Als erstes die Stromversorgung des DHT22 anschalten
+  digitalWrite(DHT22_PWR_PIN, HIGH);
+#ifdef DEBUG_SERIAL
+  digitalWrite(LED_BUILTIN, LOW);
+#endif // DEBUG_SERIAL
+  
   // Photo-Wert
   int h = analogRead(RPHOTOPIN);
   D_PRINTF("Helligkeit: %d\n", h);
@@ -224,6 +213,34 @@ void setup() {
   digitalWrite(FEUCHTESENSORVDDPIN, LOW);
 #endif // FEUCHTESENSOR
 
+
+  //  DHT22, die 2.
+  // jetzt messen
+  delay(500);
+  float T = 0;
+  float F = 0;
+  int err = SimpleDHTErrSuccess;
+  int lese_versuche = 3;
+  while (lese_versuche > 0) {
+    if ((err = __Dht22.read2(&T, &F, NULL)) == SimpleDHTErrSuccess) {
+      D_PRINTF("DHT22: %f°C %f RH%%\n", T, F);
+      __Mqtt.Sende(DEVICEART1, T);
+      __Mqtt.Sende(DEVICEART2, F);
+      break;
+    }
+    lese_versuche--;
+    delay(500);
+  }
+  digitalWrite(DHT22_PWR_PIN, LOW); // Strom sparen
+#ifdef DEBUG_SERIAL
+  digitalWrite(LED_BUILTIN, HIGH);
+#endif // DEBUG_SERIAL
+  if (lese_versuche == 0) {
+    char nachricht[50];
+    snprintf(nachricht, 29, "Fehler beim lesen von DHT22, err=%d", err);
+    D_PRINTLN(nachricht);
+    __Mqtt.Sende("", nachricht, false);
+  }
   // Level Akku
   D_PRINTF("Akkuspannung: %f V\n", (float)bat_level);
   __Mqtt.Sende(DEVICEART5, bat_level);
