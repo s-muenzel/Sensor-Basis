@@ -3,8 +3,6 @@
 #ifndef INCLUDE_MQTT
 #define INCLUDE_MQTT
 
-#include <PubSubClient.h>
-
 // MQTT Muster Daten:
 #define DEVICETYP	"Sensor"
 #define DEVICEID	"WZTuF"
@@ -35,7 +33,6 @@ class Mein_MQTT {
     void Ende();
 
   private:
-    PubSubClient client;
     char _msg[MAX_NACHRICHT];
     char _thema[MAX_THEMA]; // topic
     char _client_ID[40];

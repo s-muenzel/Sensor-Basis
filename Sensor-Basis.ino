@@ -1,9 +1,16 @@
-/* */
+/* Für Assuensensorstation
+* Benötigt Bibliotheken
+* SimpleDHT (Winlin)
+* MQTT (Joel Gaehwiler)
+* PubSubClient (Nick O'Leary) --> Alternative
+* /// ACHTUNG: NSLOOKUP geht nicht, IP-Adresse MQTT-Server ist hard-coded
+*/
 
 #include <WiFi.h>
-#include <PubSubClient.h>
 
 #include "MQTT.h"
+
+//define FEUCHTESENSOR
 
 //#define DEBUGING
 //#define DEBUG_SERIAL
@@ -105,7 +112,11 @@ bool setup_wifi() {
     delay(1000);
     D_PRINT(".");
     ++connect_trial_count;
+#ifdef DEBUGING
+    if (connect_trial_count > 40) {
+#else // DEBUGING
     if (connect_trial_count > 10) {
+#endif // DEBUGING
       D_PRINTLN("Fehler: keine WLAN-Verbindung");
       return false;
     }
@@ -119,14 +130,19 @@ bool setup_wifi() {
 // Hauptprogramm
 
 void setup() {
+  D_BEGIN(115200);
   // Level Akku - als erstes lesen. Falls zu niedrig, sofort wieder einschlafen
   float bat_level = analogRead(35) * 7.445f / 4096;
+  D_PRINTF("Batteriespannung: %f\n",bat_level);
   if (bat_level < AKKU_LEER) { // Akku leer, schlafen
     Schlafe(BOOT_AKKU);
   }
 
+#ifdef FEUCHTESENSOR
   pinMode(FEUCHTESENSORVDDPIN, OUTPUT); // Als erstes die Stromversorgung des Feuchtesensors anschalten
   digitalWrite(FEUCHTESENSORVDDPIN, HIGH);
+#endif // FEUCHTESENSOR
+
 #ifdef DEBUG_SERIAL
   pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
   digitalWrite(LED_BUILTIN, HIGH);
@@ -184,6 +200,7 @@ void setup() {
       __Mqtt.Sende(DEVICEART2, F);
       break;
     }
+    lese_versuche--;
     delay(500);
   }
   if (lese_versuche == 0) {
@@ -199,12 +216,14 @@ void setup() {
   __Mqtt.Sende(DEVICEART3, h);
 
 
+#ifdef FEUCHTESENSOR
   // Feuchtesensor
   int fs = analogRead(FEUCHTESENSORPIN);
   D_PRINTF("Wert Feuchesensor: %d\n", fs);
   __Mqtt.Sende(DEVICEART4, fs);
   digitalWrite(FEUCHTESENSORVDDPIN, LOW);
-  
+#endif // FEUCHTESENSOR
+
   // Level Akku
   D_PRINTF("Akkuspannung: %f V\n", (float)bat_level);
   __Mqtt.Sende(DEVICEART5, bat_level);

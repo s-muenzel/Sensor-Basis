@@ -18,13 +18,13 @@ void Mein_MQTT::Beginn() {
 
 bool Mein_MQTT::Verbinde() {
   int connect_trial_count = 0;
-  D_PRINTF("Verbinde mit MQTT Broker als <%s> ", client_ID);
+  D_PRINTF("Verbinde mit MQTT Broker als <%s> ", _client_ID);
   while (!__MQTT_Adaptor.Verbunden()) {
     if (__MQTT_Adaptor.Verbinde(_client_ID, device_user, device_pw, MQTT_MUSTER_BASIS, 1, true, "tot")) {
       D_PRINTLN("ok");
       return true;
     } else {
-      D_PRINTF("geht nicht, rc=%d\n", client.state());
+      D_PRINTF("geht nicht, rc=%d\n", __MQTT_Adaptor.Status());
       ++connect_trial_count;
       if (connect_trial_count > 10) {
         D_PRINTLN("Fehler: kein MQTT");
@@ -69,4 +69,3 @@ bool Mein_MQTT::Sende(const char* d_art, const char* wert, bool retain) {
 void Mein_MQTT::Ende() {
   __MQTT_Adaptor.Ende();
 }
-
