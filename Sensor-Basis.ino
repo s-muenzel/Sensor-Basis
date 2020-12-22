@@ -195,11 +195,14 @@ void setup() {
   //  DHT22
   pinMode(DHT22_PWR_PIN, OUTPUT); // Als erstes die Stromversorgung des DHT22 anschalten
   digitalWrite(DHT22_PWR_PIN, HIGH);
+  delay(500);
 #ifdef DEBUG_SERIAL
+  delay(1500);
   digitalWrite(LED_BUILTIN, LOW);
 #endif // DEBUG_SERIAL
   
   // Photo-Wert
+  pinMode(RPHOTOPIN, INPUT);
   int h = analogRead(RPHOTOPIN);
   D_PRINTF("Helligkeit: %d\n", h);
   __Mqtt.Sende(DEVICEART3, h);
@@ -216,7 +219,6 @@ void setup() {
 
   //  DHT22, die 2.
   // jetzt messen
-  delay(500);
   float T = 0;
   float F = 0;
   int err = SimpleDHTErrSuccess;
