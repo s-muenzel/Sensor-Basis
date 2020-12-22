@@ -27,7 +27,7 @@ class Mein_MQTT {
     bool Verbinde();
 
     bool Sende(const char* d_art, int wert);
-    bool Sende(const char* d_art, float wert);
+    bool Sende(const char* d_art, float wert, uint8_t nachkomma = 1);
     bool Sende(const char* d_art, const char* wert, bool retain = false);
 
     void Ende();
